@@ -153,7 +153,7 @@ function AddFoodModal({ user, onAdd, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/50" onClick={onClose}>
-      <div className="bg-zinc-900 rounded-t-3xl p-4 max-h-[88vh] flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="bg-zinc-900 rounded-t-3xl p-4 max-h-[88dvh] pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="w-10 h-1 bg-zinc-700 rounded-full mx-auto mb-4" />
         <div className="flex items-center gap-3 mb-3">
           <span className="text-zinc-400 text-sm">Time</span>
@@ -367,7 +367,8 @@ export default function FoodLog() {
       </div>
 
       <button onClick={() => setShowModal(true)}
-        className="fixed bottom-24 right-4 w-14 h-14 bg-green-500 rounded-full shadow-lg shadow-green-500/30 flex items-center justify-center active:scale-95 transition-transform z-40">
+        className="fixed right-4 w-14 h-14 bg-green-500 rounded-full shadow-lg shadow-green-500/30 flex items-center justify-center active:scale-95 transition-transform z-40"
+        style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5.5rem)' }}>
         <svg viewBox="0 0 24 24" fill="currentColor" className="w-7 h-7 text-black"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
       </button>
 

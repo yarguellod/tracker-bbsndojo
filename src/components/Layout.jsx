@@ -45,8 +45,8 @@ const tabs = [
 
 export default function Layout() {
   return (
-    <div className="flex flex-col h-screen max-w-md mx-auto">
-      <main className="flex-1 overflow-y-auto">
+    <div className="flex flex-col h-[100dvh] max-w-md mx-auto pt-safe">
+      <main className="flex-1 overflow-y-auto overscroll-contain">
         <Outlet />
       </main>
       <nav className="bg-zinc-900 border-t border-zinc-800 pb-safe flex-shrink-0">

@@ -63,7 +63,7 @@ function CreateGroupModal({ user, foods, onSave, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end" onClick={onClose}>
-      <div className="bg-zinc-900 rounded-t-3xl p-4 max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="bg-zinc-900 rounded-t-3xl p-4 max-h-[85dvh] pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="w-10 h-1 bg-zinc-700 rounded-full mx-auto mb-4" />
         <p className="text-white font-semibold mb-3">New Meal Group</p>
         <input placeholder="Group name (e.g. Usual Breakfast)" value={name} onChange={e => setName(e.target.value)}
