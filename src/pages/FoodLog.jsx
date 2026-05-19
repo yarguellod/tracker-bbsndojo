@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react'
-import { doc, onSnapshot, setDoc, collection, getDocs, addDoc, deleteDoc, getDoc } from 'firebase/firestore'
+import { doc, onSnapshot, setDoc, collection, getDocs, addDoc, deleteDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuth } from '../contexts/AuthContext'
 
 const toKey = (d) => d.toISOString().slice(0, 10)
 const fmt = (d) => d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-const clamp = (v, min, max) => Math.min(max, Math.max(min, v))
 const calc = (food, grams) => ({
   cal: Math.round((grams / 100) * food.cal),
   protein: Math.round((grams / 100) * food.protein * 10) / 10,
@@ -93,27 +92,18 @@ function SuppPills({ supplements, setSupplements, done, onToggle, userId }) {
   )
 }
 
-function MiniDashboard({ totals, goals }) {
-  const remaining = goals.calorieGoal - totals.cal
-  const over = remaining < 0
-  const calPct = clamp((totals.cal / goals.calorieGoal) * 100, 0, 100)
+function MiniDashboard({ totals }) {
   return (
     <div className="mx-4 mt-3 bg-zinc-900 rounded-2xl p-4">
-      <div className="flex items-end justify-between mb-2">
-        <div>
-          <span className={`text-3xl font-bold ${over ? 'text-red-400' : 'text-green-400'}`}>{Math.abs(Math.round(remaining))}</span>
-          <span className="text-zinc-500 text-sm ml-1.5">{over ? 'kcal over' : 'kcal left'}</span>
-        </div>
-        <span className="text-zinc-600 text-sm">{Math.round(totals.cal)} eaten</span>
-      </div>
-      <div className="bg-zinc-800 rounded-full h-1.5 mb-3">
-        <div className={`h-1.5 rounded-full transition-all ${over ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${calPct}%` }} />
+      <div className="flex items-baseline gap-2 mb-3">
+        <span className="text-3xl font-bold text-green-400">{Math.round(totals.cal)}</span>
+        <span className="text-zinc-500 text-sm">kcal eaten today</span>
       </div>
       <div className="grid grid-cols-3 gap-2 text-center">
-        {[['P', totals.protein, goals.proteinGoal, 'text-blue-400'], ['C', totals.carbs, goals.carbsGoal, 'text-amber-400'], ['F', totals.fat, goals.fatGoal, 'text-orange-400']].map(([l, v, g, c]) => (
+        {[['Protein', totals.protein, 'text-blue-400'], ['Carbs', totals.carbs, 'text-amber-400'], ['Fat', totals.fat, 'text-orange-400']].map(([l, v, c]) => (
           <div key={l} className="bg-zinc-800 rounded-xl py-2">
-            <p className={`text-sm font-bold ${c}`}>{Math.round(v)}g</p>
-            <p className="text-zinc-600 text-xs">{l} / {g}g</p>
+            <p className={`text-sm font-bold ${c}`}>{Math.round(v * 10) / 10}g</p>
+            <p className="text-zinc-600 text-xs">{l}</p>
           </div>
         ))}
       </div>
@@ -276,14 +266,10 @@ export default function FoodLog() {
   const [entries, setEntries] = useState([])
   const [supplements, setSupplements] = useState([])
   const [suppDone, setSuppDone] = useState([])
-  const [goals, setGoals] = useState({ calorieGoal: 2500, proteinGoal: 160, carbsGoal: 300, fatGoal: 80 })
   const [showModal, setShowModal] = useState(false)
 
   useEffect(() => {
     if (!user) return
-    getDoc(doc(db, 'users', user.uid, 'settings', 'goals')).then(snap => {
-      if (snap.exists()) setGoals(g => ({ ...g, ...snap.data() }))
-    })
     getDocs(collection(db, 'users', user.uid, 'supplements')).then(snap => {
       setSupplements(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     })
@@ -351,7 +337,7 @@ export default function FoodLog() {
       </div>
 
       <SuppPills supplements={supplements} setSupplements={setSupplements} done={suppDone} onToggle={toggleSupp} userId={user?.uid} />
-      <MiniDashboard totals={totals} goals={goals} />
+      <MiniDashboard totals={totals} />
 
       <div className="px-4 mt-3 space-y-2">
         {entries.length === 0 && (
