@@ -7,6 +7,7 @@ import FoodLibrary from './pages/FoodLibrary'
 import Workout from './pages/Workout'
 import Daily from './pages/Daily'
 import Trends from './pages/Trends'
+import Money from './pages/Money'
 
 function ProtectedRoute({ children }) {
   const { user } = useAuth()
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="workout" element={<Workout />} />
         <Route path="daily" element={<Daily />} />
         <Route path="trends" element={<Trends />} />
+        <Route path="money" element={<Money />} />
         <Route path="library" element={<FoodLibrary />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
