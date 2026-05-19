@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from 'firebase/firestore'
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, orderBy, getDoc, setDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -9,29 +9,106 @@ const fmtMoney = (n) => `$${(Math.round(n * 100) / 100).toLocaleString('en-US', 
 const fmtDate = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
 const TYPES = [
-  { id: 'gig',       label: 'Gig',       bg: 'bg-emerald-500', text: 'text-emerald-200', dot: 'bg-emerald-500' },
-  { id: 'rehearsal', label: 'Rehearsal', bg: 'bg-blue-500',    text: 'text-blue-200',    dot: 'bg-blue-500' },
-  { id: 'lesson',    label: 'Lesson',    bg: 'bg-purple-500',  text: 'text-purple-200',  dot: 'bg-purple-500' },
-  { id: 'expense',   label: 'Expense',   bg: 'bg-red-500',     text: 'text-red-200',     dot: 'bg-red-500' },
+  { id: 'gig',       label: 'Gig',       bg: 'bg-emerald-500', text: 'text-emerald-200', dot: 'bg-emerald-500', placeholder: 'Venue or band' },
+  { id: 'sound',     label: 'Sound',     bg: 'bg-cyan-500',    text: 'text-cyan-200',    dot: 'bg-cyan-500',    placeholder: 'Event, band, venue' },
+  { id: 'rehearsal', label: 'Rehearsal', bg: 'bg-blue-500',    text: 'text-blue-200',    dot: 'bg-blue-500',    placeholder: 'Band or project' },
+  { id: 'lesson',    label: 'Lesson',    bg: 'bg-purple-500',  text: 'text-purple-200',  dot: 'bg-purple-500',  placeholder: 'Student or topic' },
+  { id: 'repair',    label: 'Repair',    bg: 'bg-orange-500',  text: 'text-orange-200',  dot: 'bg-orange-500',  placeholder: "What was fixed? (Mike's bike, Sarah's car)" },
+  { id: 'expense',   label: 'Expense',   bg: 'bg-red-500',     text: 'text-red-200',     dot: 'bg-red-500',     placeholder: 'What for? (gas, strings, fee)' },
 ]
 const typeOf = (id) => TYPES.find(t => t.id === id) || TYPES[0]
 
-function AddModal({ user, onClose }) {
+const DEFAULT_PRESETS = [
+  { id: 'kids', name: 'Kids', rate: 300 },
+  { id: 'jess', name: 'Jess', rate: 50 },
+]
+
+const DEFAULT_EXPENSE_PRESETS = [
+  { id: 'phone',     name: 'Phone bill' },
+  { id: 'insurance', name: 'Insurance' },
+  { id: 'rent',      name: 'Rent' },
+  { id: 'store',     name: 'Store' },
+  { id: 'gas',       name: 'Gas' },
+]
+
+function AddModal({ user, presets, expensePresets, onSavePresets, onSaveExpensePresets, onClose }) {
   const [form, setForm] = useState({
-    type: 'gig', date: todayKey(), amount: '', paid: true, notes: '',
+    type: 'gig', date: todayKey(), amount: '', hours: '', rate: '', paid: true, notes: '',
   })
+  const [showAddPreset, setShowAddPreset] = useState(false)
+  const [newPreset, setNewPreset] = useState({ name: '', rate: '' })
+  const [showAddExpensePreset, setShowAddExpensePreset] = useState(false)
+  const [newExpensePreset, setNewExpensePreset] = useState({ name: '', amount: '' })
 
   const isExpense = form.type === 'expense'
+  const t = typeOf(form.type)
+
+  useEffect(() => {
+    const h = Number(form.hours), r = Number(form.rate)
+    if (h > 0 && r > 0) {
+      const calc = Math.round(h * r * 100) / 100
+      setForm(f => ({ ...f, amount: String(calc) }))
+    }
+  }, [form.hours, form.rate])
+
+  const pickPreset = (p) => {
+    setForm(f => ({
+      ...f,
+      rate: String(p.rate),
+      hours: f.hours || '1',
+      notes: f.notes || p.name,
+    }))
+  }
+
+  const addPreset = async () => {
+    const r = Number(newPreset.rate)
+    if (!newPreset.name.trim() || !(r > 0)) return
+    const updated = [...presets, { id: crypto.randomUUID().slice(0, 8), name: newPreset.name.trim(), rate: r }]
+    await onSavePresets(updated)
+    setNewPreset({ name: '', rate: '' })
+    setShowAddPreset(false)
+  }
+
+  const deletePreset = async (id) => {
+    await onSavePresets(presets.filter(p => p.id !== id))
+  }
+
+  const pickExpensePreset = (p) => {
+    setForm(f => ({
+      ...f,
+      notes: p.name,
+      amount: p.amount ? String(p.amount) : f.amount,
+    }))
+  }
+
+  const addExpensePreset = async () => {
+    if (!newExpensePreset.name.trim()) return
+    const amt = Number(newExpensePreset.amount)
+    const entry = { id: crypto.randomUUID().slice(0, 8), name: newExpensePreset.name.trim() }
+    if (amt > 0) entry.amount = amt
+    await onSaveExpensePresets([...expensePresets, entry])
+    setNewExpensePreset({ name: '', amount: '' })
+    setShowAddExpensePreset(false)
+  }
+
+  const deleteExpensePreset = async (id) => {
+    await onSaveExpensePresets(expensePresets.filter(p => p.id !== id))
+  }
 
   const save = async () => {
     const amt = Number(form.amount)
     if (!amt || amt <= 0) return
+    const h = Number(form.hours), r = Number(form.rate)
+    let notes = form.notes.trim()
+    if (h > 0 && r > 0 && !notes.includes('@')) {
+      notes = notes ? `${notes} — ${h}hr @ $${r}/hr` : `${h}hr @ $${r}/hr`
+    }
     await addDoc(collection(db, 'users', user.uid, 'money'), {
       type: form.type,
       date: form.date,
       amount: amt,
       paid: isExpense ? true : form.paid,
-      notes: form.notes.trim(),
+      notes,
       createdAt: Date.now(),
     })
     onClose()
@@ -39,12 +116,12 @@ function AddModal({ user, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/50" onClick={onClose}>
-      <div className="bg-zinc-900 rounded-t-3xl p-4 max-h-[88dvh] pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] flex flex-col gap-3"
+      <div className="bg-zinc-900 rounded-t-3xl p-4 max-h-[88dvh] pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] flex flex-col gap-3 overflow-y-auto"
         onClick={e => e.stopPropagation()}>
         <div className="w-10 h-1 bg-zinc-700 rounded-full mx-auto" />
         <p className="text-white font-semibold">New entry</p>
 
-        <div className="grid grid-cols-4 gap-1.5">
+        <div className="grid grid-cols-3 gap-1.5">
           {TYPES.map(t => (
             <button key={t.id} onClick={() => setForm(f => ({ ...f, type: t.id }))}
               className={`py-2 rounded-xl text-xs font-semibold transition-all ${form.type === t.id ? `${t.bg} text-white` : 'bg-zinc-800 text-zinc-400'}`}>
@@ -52,6 +129,39 @@ function AddModal({ user, onClose }) {
             </button>
           ))}
         </div>
+
+        {isExpense && (
+          <div className="space-y-2">
+            <p className="text-zinc-500 text-xs">Quick fill</p>
+            <div className="flex gap-1.5 flex-wrap">
+              {expensePresets.map(p => (
+                <div key={p.id} className="flex items-center bg-zinc-800 rounded-full overflow-hidden">
+                  <button onClick={() => pickExpensePreset(p)} className="px-2.5 py-1 text-xs font-medium text-zinc-300">
+                    {p.name}{p.amount ? <span className="text-zinc-500"> ${p.amount}</span> : ''}
+                  </button>
+                  <button onClick={() => deleteExpensePreset(p.id)} className="px-1.5 py-1 text-zinc-600 active:text-red-400 text-xs">×</button>
+                </div>
+              ))}
+              {!showAddExpensePreset && (
+                <button onClick={() => setShowAddExpensePreset(true)} className="bg-zinc-800 text-zinc-500 px-2.5 py-1 rounded-full text-xs">
+                  + Category
+                </button>
+              )}
+            </div>
+            {showAddExpensePreset && (
+              <div className="flex gap-1.5 items-center bg-zinc-800 rounded-xl p-1.5">
+                <input placeholder="Name" value={newExpensePreset.name} onChange={e => setNewExpensePreset(p => ({ ...p, name: e.target.value }))}
+                  className="flex-1 bg-zinc-900 text-white rounded-lg px-2 py-1 text-xs outline-none" autoFocus />
+                <span className="text-zinc-500 text-xs">$</span>
+                <input type="number" inputMode="decimal" placeholder="amt (opt)" value={newExpensePreset.amount}
+                  onChange={e => setNewExpensePreset(p => ({ ...p, amount: e.target.value }))}
+                  className="w-20 bg-zinc-900 text-white rounded-lg px-2 py-1 text-xs outline-none" />
+                <button onClick={addExpensePreset} className="bg-red-500 text-white text-xs font-semibold px-2 py-1 rounded-lg">Save</button>
+                <button onClick={() => setShowAddExpensePreset(false)} className="text-zinc-500 text-xs px-1">×</button>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex items-center gap-2">
           <label className="text-zinc-400 text-xs w-12">Date</label>
@@ -64,12 +174,65 @@ function AddModal({ user, onClose }) {
           <div className="flex-1 flex items-center bg-zinc-800 rounded-xl px-3">
             <span className="text-zinc-500 text-sm">$</span>
             <input type="number" inputMode="decimal" placeholder="0.00" value={form.amount} autoFocus
-              onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
+              onChange={e => setForm(f => ({ ...f, amount: e.target.value, hours: '', rate: '' }))}
               className="flex-1 bg-transparent text-white py-2 px-2 text-sm outline-none" />
           </div>
         </div>
 
-        <input type="text" placeholder={isExpense ? 'What for? (gas, strings, fee…)' : 'Notes (venue, student, song…)'}
+        <div className="bg-zinc-800/40 border border-zinc-800 rounded-xl p-3 space-y-2">
+          <p className="text-zinc-500 text-xs">Or by the hour</p>
+
+          {form.type === 'lesson' && (
+            <div className="flex gap-1.5 flex-wrap">
+              {presets.map(p => (
+                <div key={p.id} className="flex items-center bg-zinc-800 rounded-full overflow-hidden">
+                  <button onClick={() => pickPreset(p)}
+                    className={`px-2.5 py-1 text-xs font-medium ${Number(form.rate) === p.rate ? 'text-purple-300' : 'text-zinc-300'}`}>
+                    {p.name} <span className="text-zinc-500">${p.rate}/hr</span>
+                  </button>
+                  <button onClick={() => deletePreset(p.id)} className="px-1.5 py-1 text-zinc-600 active:text-red-400 text-xs">×</button>
+                </div>
+              ))}
+              {!showAddPreset && (
+                <button onClick={() => setShowAddPreset(true)} className="bg-zinc-800 text-zinc-500 px-2.5 py-1 rounded-full text-xs">
+                  + Preset
+                </button>
+              )}
+            </div>
+          )}
+
+          {form.type === 'lesson' && showAddPreset && (
+            <div className="flex gap-1.5 items-center bg-zinc-800 rounded-xl p-1.5">
+              <input placeholder="Name" value={newPreset.name} onChange={e => setNewPreset(p => ({ ...p, name: e.target.value }))}
+                className="flex-1 bg-zinc-900 text-white rounded-lg px-2 py-1 text-xs outline-none" autoFocus />
+              <span className="text-zinc-500 text-xs">$</span>
+              <input type="number" inputMode="decimal" placeholder="rate/hr" value={newPreset.rate}
+                onChange={e => setNewPreset(p => ({ ...p, rate: e.target.value }))}
+                className="w-16 bg-zinc-900 text-white rounded-lg px-2 py-1 text-xs outline-none" />
+              <button onClick={addPreset} className="bg-purple-500 text-white text-xs font-semibold px-2 py-1 rounded-lg">Save</button>
+              <button onClick={() => setShowAddPreset(false)} className="text-zinc-500 text-xs px-1">×</button>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <input type="number" inputMode="decimal" placeholder="Hours" value={form.hours}
+              onChange={e => setForm(f => ({ ...f, hours: e.target.value }))}
+              className="flex-1 bg-zinc-800 text-white rounded-lg px-2.5 py-1.5 text-sm outline-none focus:ring-1 focus:ring-green-500" />
+            <span className="text-zinc-600 text-xs">×</span>
+            <div className="flex-1 flex items-center bg-zinc-800 rounded-lg px-2">
+              <span className="text-zinc-500 text-xs">$</span>
+              <input type="number" inputMode="decimal" placeholder="rate" value={form.rate}
+                onChange={e => setForm(f => ({ ...f, rate: e.target.value }))}
+                className="flex-1 bg-transparent text-white py-1.5 px-1 text-sm outline-none" />
+              <span className="text-zinc-500 text-xs">/hr</span>
+            </div>
+            {Number(form.hours) > 0 && Number(form.rate) > 0 && (
+              <span className="text-green-400 text-xs font-bold">= {fmtMoney(Number(form.hours) * Number(form.rate))}</span>
+            )}
+          </div>
+        </div>
+
+        <input type="text" placeholder={t.placeholder}
           value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
           className="w-full bg-zinc-800 text-white rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-green-500" />
 
@@ -98,6 +261,8 @@ export default function Money() {
   const [entries, setEntries] = useState([])
   const [filter, setFilter] = useState('all')
   const [showAdd, setShowAdd] = useState(false)
+  const [presets, setPresets] = useState(DEFAULT_PRESETS)
+  const [expensePresets, setExpensePresets] = useState(DEFAULT_EXPENSE_PRESETS)
 
   useEffect(() => {
     if (!user) return
@@ -108,12 +273,37 @@ export default function Money() {
     return unsub
   }, [user])
 
+  useEffect(() => {
+    if (!user) return
+    getDoc(doc(db, 'users', user.uid, 'settings', 'lessonRates')).then(snap => {
+      if (snap.exists() && snap.data().presets) setPresets(snap.data().presets)
+    })
+    getDoc(doc(db, 'users', user.uid, 'settings', 'expensePresets')).then(snap => {
+      if (snap.exists() && snap.data().presets) setExpensePresets(snap.data().presets)
+    })
+  }, [user])
+
+  const savePresets = async (updated) => {
+    setPresets(updated)
+    await setDoc(doc(db, 'users', user.uid, 'settings', 'lessonRates'), { presets: updated }, { merge: true })
+  }
+
+  const saveExpensePresets = async (updated) => {
+    setExpensePresets(updated)
+    await setDoc(doc(db, 'users', user.uid, 'settings', 'expensePresets'), { presets: updated }, { merge: true })
+  }
+
   const thisMonth = todayKey().slice(0, 7)
   const monthEntries = entries.filter(e => monthOf(e.date) === thisMonth)
   const income = monthEntries.filter(e => e.type !== 'expense').reduce((s, e) => s + e.amount, 0)
   const unpaid = monthEntries.filter(e => e.type !== 'expense' && !e.paid).reduce((s, e) => s + e.amount, 0)
   const expenses = monthEntries.filter(e => e.type === 'expense').reduce((s, e) => s + e.amount, 0)
   const net = income - expenses
+
+  const byType = TYPES.filter(t => t.id !== 'expense').map(t => ({
+    ...t,
+    total: monthEntries.filter(e => e.type === t.id).reduce((s, e) => s + e.amount, 0),
+  })).filter(t => t.total > 0)
 
   const filtered = filter === 'all'
     ? entries
@@ -144,7 +334,7 @@ export default function Money() {
             <span className={`text-3xl font-bold ${net >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{fmtMoney(net)}</span>
             <span className="text-zinc-500 text-sm">net</span>
           </div>
-          <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="grid grid-cols-3 gap-2 text-center mb-3">
             <div className="bg-zinc-800 rounded-xl py-2">
               <p className="text-emerald-400 text-sm font-bold">{fmtMoney(income)}</p>
               <p className="text-zinc-600 text-xs">Income</p>
@@ -158,10 +348,21 @@ export default function Money() {
               <p className="text-zinc-600 text-xs">Expenses</p>
             </div>
           </div>
+          {byType.length > 0 && (
+            <div className="flex gap-1.5 flex-wrap pt-2 border-t border-zinc-800">
+              {byType.map(t => (
+                <div key={t.id} className="flex items-center gap-1.5 bg-zinc-800 rounded-full px-2.5 py-1">
+                  <span className={`w-1.5 h-1.5 rounded-full ${t.dot}`} />
+                  <span className="text-zinc-300 text-xs">{t.label}</span>
+                  <span className="text-zinc-500 text-xs">{fmtMoney(t.total)}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="flex gap-1.5 overflow-x-auto -mx-4 px-4 pb-1" style={{ scrollbarWidth: 'none' }}>
-          {[['all', 'All'], ['unpaid', 'Unpaid'], ['gig', 'Gigs'], ['rehearsal', 'Rehearsals'], ['lesson', 'Lessons'], ['expense', 'Expenses']].map(([id, label]) => (
+          {[['all', 'All'], ['unpaid', 'Unpaid'], ...TYPES.map(t => [t.id, t.label + 's'])].map(([id, label]) => (
             <button key={id} onClick={() => setFilter(id)}
               className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${filter === id ? 'bg-zinc-700 text-white' : 'bg-zinc-900 text-zinc-500'}`}>
               {label}
@@ -218,7 +419,8 @@ export default function Money() {
         <svg viewBox="0 0 24 24" fill="currentColor" className="w-7 h-7 text-black"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
       </button>
 
-      {showAdd && <AddModal user={user} onClose={() => setShowAdd(false)} />}
+      {showAdd && <AddModal user={user} presets={presets} expensePresets={expensePresets}
+        onSavePresets={savePresets} onSaveExpensePresets={saveExpensePresets} onClose={() => setShowAdd(false)} />}
     </div>
   )
 }
