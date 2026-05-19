@@ -1,16 +1,125 @@
 import { useState, useEffect } from 'react'
-import { doc, onSnapshot, setDoc, collection, getDocs } from 'firebase/firestore'
+import { doc, onSnapshot, setDoc, collection, getDocs, addDoc, deleteDoc, getDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuth } from '../contexts/AuthContext'
 
 const toKey = (d) => d.toISOString().slice(0, 10)
 const fmt = (d) => d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+const clamp = (v, min, max) => Math.min(max, Math.max(min, v))
 const calc = (food, grams) => ({
   cal: Math.round((grams / 100) * food.cal),
   protein: Math.round((grams / 100) * food.protein * 10) / 10,
   carbs: Math.round((grams / 100) * food.carbs * 10) / 10,
   fat: Math.round((grams / 100) * food.fat * 10) / 10,
 })
+const getInitials = (name) => {
+  const words = name.trim().split(/\s+/)
+  if (words.length === 1) return name.slice(0, 3).toUpperCase()
+  return words.map(w => w[0]).join('').toUpperCase().slice(0, 3)
+}
+const FREQUENCIES = ['Daily', 'Morning', 'Evening', 'Pre-workout', 'Post-workout', 'With meals']
+
+function SuppPills({ supplements, setSupplements, done, onToggle, userId }) {
+  const [showAdd, setShowAdd] = useState(false)
+  const [form, setForm] = useState({ name: '', frequency: 'Daily' })
+
+  const addSupp = async () => {
+    if (!form.name.trim()) return
+    const ref = await addDoc(collection(db, 'users', userId, 'supplements'), {
+      name: form.name.trim(), frequency: form.frequency,
+    })
+    setSupplements(s => [...s, { id: ref.id, name: form.name.trim(), frequency: form.frequency }])
+    setForm({ name: '', frequency: 'Daily' })
+    setShowAdd(false)
+  }
+
+  const deleteSupp = async (id) => {
+    await deleteDoc(doc(db, 'users', userId, 'supplements', id))
+    setSupplements(s => s.filter(x => x.id !== id))
+  }
+
+  return (
+    <div className="border-b border-zinc-900">
+      <div className="flex gap-2 overflow-x-auto px-4 py-3 items-start" style={{ scrollbarWidth: 'none' }}>
+        {supplements.map(s => {
+          const taken = done.includes(s.id)
+          return (
+            <div key={s.id} className="flex-shrink-0 flex flex-col items-center gap-1">
+              <button
+                onClick={() => onToggle(s.id)}
+                className={`flex flex-col items-center px-4 py-2 rounded-full font-bold transition-all active:scale-95 ${
+                  taken ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/25' : 'bg-zinc-800 text-zinc-400'
+                }`}
+              >
+                <span className="text-sm font-extrabold tracking-wide">{getInitials(s.name)}</span>
+                <span className={`text-xs font-normal leading-tight ${taken ? 'text-purple-200' : 'text-zinc-600'}`}>
+                  {s.frequency}
+                </span>
+              </button>
+              <button onClick={() => deleteSupp(s.id)} className="text-zinc-700 active:text-red-400 text-sm leading-none">×</button>
+            </div>
+          )
+        })}
+        <button
+          onClick={() => setShowAdd(v => !v)}
+          className="flex-shrink-0 w-12 h-12 rounded-full bg-zinc-800 border-2 border-dashed border-zinc-700 flex items-center justify-center text-zinc-500 text-2xl active:bg-zinc-700"
+        >+</button>
+      </div>
+
+      {showAdd && (
+        <div className="px-4 pb-4 space-y-2">
+          <input autoFocus placeholder="Supplement name (e.g. Creatine, B12…)"
+            value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+            onKeyDown={e => e.key === 'Enter' && addSupp()}
+            className="w-full bg-zinc-800 text-white rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-purple-500" />
+          <div className="flex gap-1.5 flex-wrap">
+            {FREQUENCIES.map(f => (
+              <button key={f} onClick={() => setForm(x => ({ ...x, frequency: f }))}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${form.frequency === f ? 'bg-purple-500 text-white' : 'bg-zinc-800 text-zinc-400'}`}>
+                {f}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setShowAdd(false)} className="flex-1 bg-zinc-800 text-white py-2 rounded-xl text-sm">Cancel</button>
+            <button onClick={addSupp} disabled={!form.name.trim()}
+              className="flex-1 bg-purple-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white font-bold py-2 rounded-xl text-sm">
+              Add Supplement
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MiniDashboard({ totals, goals }) {
+  const remaining = goals.calorieGoal - totals.cal
+  const over = remaining < 0
+  const calPct = clamp((totals.cal / goals.calorieGoal) * 100, 0, 100)
+  return (
+    <div className="mx-4 mt-3 bg-zinc-900 rounded-2xl p-4">
+      <div className="flex items-end justify-between mb-2">
+        <div>
+          <span className={`text-3xl font-bold ${over ? 'text-red-400' : 'text-green-400'}`}>{Math.abs(Math.round(remaining))}</span>
+          <span className="text-zinc-500 text-sm ml-1.5">{over ? 'kcal over' : 'kcal left'}</span>
+        </div>
+        <span className="text-zinc-600 text-sm">{Math.round(totals.cal)} eaten</span>
+      </div>
+      <div className="bg-zinc-800 rounded-full h-1.5 mb-3">
+        <div className={`h-1.5 rounded-full transition-all ${over ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${calPct}%` }} />
+      </div>
+      <div className="grid grid-cols-3 gap-2 text-center">
+        {[['P', totals.protein, goals.proteinGoal, 'text-blue-400'], ['C', totals.carbs, goals.carbsGoal, 'text-amber-400'], ['F', totals.fat, goals.fatGoal, 'text-orange-400']].map(([l, v, g, c]) => (
+          <div key={l} className="bg-zinc-800 rounded-xl py-2">
+            <p className={`text-sm font-bold ${c}`}>{Math.round(v)}g</p>
+            <p className="text-zinc-600 text-xs">{l} / {g}g</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 function AddFoodModal({ user, onAdd, onClose }) {
   const [tab, setTab] = useState('library')
@@ -18,17 +127,13 @@ function AddFoodModal({ user, onAdd, onClose }) {
   const [mealGroups, setMealGroups] = useState([])
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState(null)
-  const [grams, setGrams] = useState('')
+  const [grams, setGrams] = useState('100')
   const [custom, setCustom] = useState({ name: '', cal: '', protein: '', carbs: '', fat: '' })
   const [time, setTime] = useState(() => new Date().toTimeString().slice(0, 5))
 
   useEffect(() => {
-    getDocs(collection(db, 'users', user.uid, 'foods')).then(s =>
-      setFoods(s.docs.map(d => ({ id: d.id, ...d.data() })))
-    )
-    getDocs(collection(db, 'users', user.uid, 'mealGroups')).then(s =>
-      setMealGroups(s.docs.map(d => ({ id: d.id, ...d.data() })))
-    )
+    getDocs(collection(db, 'users', user.uid, 'foods')).then(s => setFoods(s.docs.map(d => ({ id: d.id, ...d.data() }))))
+    getDocs(collection(db, 'users', user.uid, 'mealGroups')).then(s => setMealGroups(s.docs.map(d => ({ id: d.id, ...d.data() }))))
   }, [user])
 
   const filtered = foods.filter(f => f.name.toLowerCase().includes(search.toLowerCase()))
@@ -41,64 +146,56 @@ function AddFoodModal({ user, onAdd, onClose }) {
 
   const addCustom = () => {
     if (!custom.name || !custom.cal) return
-    onAdd({
-      id: crypto.randomUUID(), time, foodName: custom.name, isCustom: true,
-      cal: Number(custom.cal), protein: Number(custom.protein || 0),
-      carbs: Number(custom.carbs || 0), fat: Number(custom.fat || 0),
-    })
+    onAdd({ id: crypto.randomUUID(), time, foodName: custom.name, isCustom: true,
+      cal: Number(custom.cal), protein: Number(custom.protein || 0), carbs: Number(custom.carbs || 0), fat: Number(custom.fat || 0) })
   }
 
   const loadGroup = (group) => {
-    const entries = group.items.map(item => {
+    group.items.forEach(item => {
       const food = foods.find(f => f.id === item.foodId)
-      if (!food) return null
-      const macros = calc(food, item.grams)
-      return { id: crypto.randomUUID(), time, foodName: food.name, foodId: food.id, grams: item.grams, ...macros }
-    }).filter(Boolean)
-    entries.forEach(onAdd)
+      if (!food) return
+      onAdd({ id: crypto.randomUUID(), time, foodName: food.name, foodId: food.id, grams: item.grams, ...calc(food, item.grams) })
+    })
     onClose()
   }
 
   const preview = selected && grams ? calc(selected, Number(grams)) : null
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end" onClick={onClose}>
-      <div className="bg-zinc-900 rounded-t-3xl p-4 max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/50" onClick={onClose}>
+      <div className="bg-zinc-900 rounded-t-3xl p-4 max-h-[88vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="w-10 h-1 bg-zinc-700 rounded-full mx-auto mb-4" />
-
-        {/* Time */}
-        <div className="flex items-center gap-2 mb-3">
+        <div className="flex items-center gap-3 mb-3">
           <span className="text-zinc-400 text-sm">Time</span>
           <input type="time" value={time} onChange={e => setTime(e.target.value)}
-            className="bg-zinc-800 text-white rounded-lg px-2 py-1 text-sm outline-none" />
+            className="bg-zinc-800 text-white rounded-lg px-3 py-1.5 text-sm outline-none flex-1" />
         </div>
-
-        {/* Tabs */}
         <div className="flex gap-1 bg-zinc-800 rounded-xl p-1 mb-4">
-          {['library', 'custom', 'groups'].map(t => (
+          {[['library', 'Library'], ['custom', 'Custom'], ['groups', 'Meal Groups']].map(([t, label]) => (
             <button key={t} onClick={() => setTab(t)}
-              className={`flex-1 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all ${tab === t ? 'bg-zinc-700 text-white' : 'text-zinc-500'}`}>
-              {t === 'groups' ? 'Meal Groups' : t.charAt(0).toUpperCase() + t.slice(1)}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${tab === t ? 'bg-zinc-700 text-white' : 'text-zinc-500'}`}>
+              {label}
             </button>
           ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="flex-1 overflow-y-auto min-h-0 space-y-3">
           {tab === 'library' && (
-            <div className="space-y-3">
-              <input type="text" placeholder="Search foods…" value={search} onChange={e => setSearch(e.target.value)}
-                className="w-full bg-zinc-800 text-white rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-green-500" autoFocus />
-
+            <>
+              {!selected && (
+                <input type="text" placeholder="Search foods…" value={search} onChange={e => setSearch(e.target.value)} autoFocus
+                  className="w-full bg-zinc-800 text-white rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-green-500" />
+              )}
               {selected ? (
                 <div className="bg-zinc-800 rounded-xl p-3 space-y-3">
                   <div className="flex justify-between items-center">
                     <span className="text-white font-medium text-sm">{selected.name}</span>
-                    <button onClick={() => { setSelected(null); setGrams('') }} className="text-zinc-500 text-xs">Change</button>
+                    <button onClick={() => { setSelected(null); setGrams('100') }} className="text-zinc-500 text-xs">Change</button>
                   </div>
                   <div>
-                    <label className="text-zinc-400 text-xs">Grams</label>
-                    <input type="number" inputMode="decimal" placeholder="100" value={grams} onChange={e => setGrams(e.target.value)}
-                      className="w-full bg-zinc-700 text-white rounded-lg px-3 py-2 text-sm mt-1 outline-none" autoFocus />
+                    <label className="text-zinc-400 text-xs block mb-1">Grams</label>
+                    <input type="number" inputMode="decimal" value={grams} onChange={e => setGrams(e.target.value)} autoFocus
+                      className="w-full bg-zinc-700 text-white rounded-lg px-3 py-2.5 text-sm outline-none" />
                   </div>
                   {preview && (
                     <div className="grid grid-cols-4 gap-2 text-center">
@@ -119,7 +216,7 @@ function AddFoodModal({ user, onAdd, onClose }) {
                 <div className="space-y-1">
                   {filtered.length === 0 && <p className="text-zinc-600 text-sm text-center py-8">No foods found — add them in Library</p>}
                   {filtered.map(f => (
-                    <button key={f.id} onClick={() => setSelected(f)}
+                    <button key={f.id} onClick={() => { setSelected(f); setGrams('100') }}
                       className="w-full flex justify-between items-center bg-zinc-800 rounded-xl px-3 py-3 active:bg-zinc-700">
                       <span className="text-white text-sm">{f.name}</span>
                       <span className="text-zinc-500 text-xs">{f.cal} kcal · {f.protein}g P</span>
@@ -127,19 +224,21 @@ function AddFoodModal({ user, onAdd, onClose }) {
                   ))}
                 </div>
               )}
-            </div>
+            </>
           )}
 
           {tab === 'custom' && (
-            <div className="space-y-3">
-              <input type="text" placeholder="Food name" value={custom.name} onChange={e => setCustom(c => ({ ...c, name: e.target.value }))}
-                className="w-full bg-zinc-800 text-white rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-green-500" autoFocus />
+            <>
+              <input type="text" placeholder="Food name" value={custom.name} autoFocus
+                onChange={e => setCustom(c => ({ ...c, name: e.target.value }))}
+                className="w-full bg-zinc-800 text-white rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-green-500" />
               <div className="grid grid-cols-2 gap-2">
-                {[['cal', 'Calories *', '0'], ['protein', 'Protein (g)', '0'], ['carbs', 'Carbs (g)', '0'], ['fat', 'Fat (g)', '0']].map(([k, l, p]) => (
+                {[['cal', 'Calories *'], ['protein', 'Protein (g)'], ['carbs', 'Carbs (g)'], ['fat', 'Fat (g)']].map(([k, l]) => (
                   <div key={k}>
                     <label className="text-zinc-500 text-xs">{l}</label>
-                    <input type="number" inputMode="decimal" placeholder={p} value={custom[k]} onChange={e => setCustom(c => ({ ...c, [k]: e.target.value }))}
-                      className="w-full bg-zinc-800 text-white rounded-xl px-3 py-2 text-sm mt-1 outline-none focus:ring-1 focus:ring-green-500" />
+                    <input type="number" inputMode="decimal" placeholder="0" value={custom[k]}
+                      onChange={e => setCustom(c => ({ ...c, [k]: e.target.value }))}
+                      className="w-full bg-zinc-800 text-white rounded-xl px-3 py-2 text-sm mt-0.5 outline-none focus:ring-1 focus:ring-green-500" />
                   </div>
                 ))}
               </div>
@@ -147,7 +246,7 @@ function AddFoodModal({ user, onAdd, onClose }) {
                 className="w-full bg-green-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-black font-bold py-3 rounded-xl text-sm">
                 Add to Log
               </button>
-            </div>
+            </>
           )}
 
           {tab === 'groups' && (
@@ -175,19 +274,44 @@ export default function FoodLog() {
   const { user } = useAuth()
   const [date, setDate] = useState(new Date())
   const [entries, setEntries] = useState([])
+  const [supplements, setSupplements] = useState([])
+  const [suppDone, setSuppDone] = useState([])
+  const [goals, setGoals] = useState({ calorieGoal: 2500, proteinGoal: 160, carbsGoal: 300, fatGoal: 80 })
   const [showModal, setShowModal] = useState(false)
+
+  useEffect(() => {
+    if (!user) return
+    getDoc(doc(db, 'users', user.uid, 'settings', 'goals')).then(snap => {
+      if (snap.exists()) setGoals(g => ({ ...g, ...snap.data() }))
+    })
+    getDocs(collection(db, 'users', user.uid, 'supplements')).then(snap => {
+      setSupplements(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    })
+  }, [user])
 
   useEffect(() => {
     if (!user) return
     const ref = doc(db, 'users', user.uid, 'logs', toKey(date))
     const unsub = onSnapshot(ref, snap => {
-      setEntries(snap.exists() ? (snap.data().foodEntries ?? []) : [])
+      if (snap.exists()) {
+        setEntries(snap.data().foodEntries ?? [])
+        setSuppDone(snap.data().metrics?.supplementsDone ?? [])
+      } else {
+        setEntries([])
+        setSuppDone([])
+      }
     })
     return unsub
   }, [user, date])
 
   const saveEntries = async (updated) => {
     await setDoc(doc(db, 'users', user.uid, 'logs', toKey(date)), { foodEntries: updated }, { merge: true })
+  }
+
+  const toggleSupp = async (id) => {
+    const updated = suppDone.includes(id) ? suppDone.filter(s => s !== id) : [...suppDone, id]
+    setSuppDone(updated)
+    await setDoc(doc(db, 'users', user.uid, 'logs', toKey(date)), { metrics: { supplementsDone: updated } }, { merge: true })
   }
 
   const addEntry = (entry) => {
@@ -204,10 +328,8 @@ export default function FoodLog() {
   }
 
   const totals = entries.reduce((s, e) => ({
-    cal: s.cal + (e.cal || 0),
-    protein: s.protein + (e.protein || 0),
-    carbs: s.carbs + (e.carbs || 0),
-    fat: s.fat + (e.fat || 0),
+    cal: s.cal + (e.cal || 0), protein: s.protein + (e.protein || 0),
+    carbs: s.carbs + (e.carbs || 0), fat: s.fat + (e.fat || 0),
   }), { cal: 0, protein: 0, carbs: 0, fat: 0 })
 
   const shift = (n) => { const d = new Date(date); d.setDate(d.getDate() + n); setDate(d) }
@@ -215,31 +337,26 @@ export default function FoodLog() {
 
   return (
     <div className="min-h-full bg-zinc-950 pb-24">
-      {/* Header */}
       <div className="sticky top-0 z-10 bg-zinc-950 px-4 pt-4 pb-2 flex items-center justify-between border-b border-zinc-900">
-        <button onClick={() => shift(-1)} className="p-2 text-zinc-400"><svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button>
+        <button onClick={() => shift(-1)} className="p-2 text-zinc-400 active:text-white">
+          <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+        </button>
         <div className="text-center">
           <p className="text-white font-semibold text-sm">{fmt(date)}</p>
           {isToday && <p className="text-green-400 text-xs">Today</p>}
         </div>
-        <button onClick={() => shift(1)} className="p-2 text-zinc-400"><svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></button>
+        <button onClick={() => shift(1)} className="p-2 text-zinc-400 active:text-white">
+          <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+        </button>
       </div>
 
-      {/* Totals bar */}
-      <div className="bg-zinc-900 mx-4 mt-3 rounded-2xl p-3 grid grid-cols-4 text-center">
-        {[['Cal', Math.round(totals.cal), 'text-green-400'], ['P', Math.round(totals.protein) + 'g', 'text-blue-400'], ['C', Math.round(totals.carbs) + 'g', 'text-amber-400'], ['F', Math.round(totals.fat) + 'g', 'text-orange-400']].map(([l, v, c]) => (
-          <div key={l}>
-            <p className={`text-base font-bold ${c}`}>{v}</p>
-            <p className="text-zinc-600 text-xs">{l}</p>
-          </div>
-        ))}
-      </div>
+      <SuppPills supplements={supplements} setSupplements={setSupplements} done={suppDone} onToggle={toggleSupp} userId={user?.uid} />
+      <MiniDashboard totals={totals} goals={goals} />
 
-      {/* Entries */}
       <div className="px-4 mt-3 space-y-2">
         {entries.length === 0 && (
-          <div className="text-center py-16">
-            <p className="text-zinc-600 text-sm">No food logged yet</p>
+          <div className="text-center py-12">
+            <p className="text-zinc-600 text-sm">Nothing logged yet</p>
             <p className="text-zinc-700 text-xs mt-1">Tap + to add your first entry</p>
           </div>
         )}
@@ -248,11 +365,12 @@ export default function FoodLog() {
             <span className="text-zinc-600 text-xs w-10 flex-shrink-0">{e.time}</span>
             <div className="flex-1 min-w-0">
               <p className="text-white text-sm font-medium truncate">{e.foodName}</p>
-              <p className="text-zinc-500 text-xs">
-                {e.grams ? `${e.grams}g · ` : ''}{e.cal} kcal
-                {e.protein > 0 ? ` · P ${e.protein}g` : ''}
-                {e.carbs > 0 ? ` · C ${e.carbs}g` : ''}
-                {e.fat > 0 ? ` · F ${e.fat}g` : ''}
+              <p className="text-zinc-500 text-xs flex flex-wrap gap-x-1.5">
+                {e.grams ? <span>{e.grams}g</span> : null}
+                <span className="text-green-400">{e.cal} kcal</span>
+                {e.protein > 0 && <span className="text-blue-400">P {e.protein}g</span>}
+                {e.carbs > 0 && <span className="text-amber-400">C {e.carbs}g</span>}
+                {e.fat > 0 && <span className="text-orange-400">F {e.fat}g</span>}
               </p>
             </div>
             <button onClick={() => removeEntry(e.id)} className="text-zinc-700 active:text-red-400 p-1 flex-shrink-0">
@@ -262,11 +380,8 @@ export default function FoodLog() {
         ))}
       </div>
 
-      {/* FAB */}
-      <button
-        onClick={() => setShowModal(true)}
-        className="fixed bottom-24 right-4 w-14 h-14 bg-green-500 rounded-full shadow-lg shadow-green-500/30 flex items-center justify-center active:scale-95 transition-transform z-40"
-      >
+      <button onClick={() => setShowModal(true)}
+        className="fixed bottom-24 right-4 w-14 h-14 bg-green-500 rounded-full shadow-lg shadow-green-500/30 flex items-center justify-center active:scale-95 transition-transform z-40">
         <svg viewBox="0 0 24 24" fill="currentColor" className="w-7 h-7 text-black"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
       </button>
 

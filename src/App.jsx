@@ -2,7 +2,6 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './contexts/AuthContext'
 import Login from './pages/Login'
 import Layout from './components/Layout'
-import Home from './pages/Home'
 import FoodLog from './pages/FoodLog'
 import FoodLibrary from './pages/FoodLibrary'
 import Workout from './pages/Workout'
@@ -28,8 +27,7 @@ export default function App() {
           <Layout />
         </ProtectedRoute>
       }>
-        <Route index element={<Home />} />
-        <Route path="food" element={<FoodLog />} />
+        <Route index element={<FoodLog />} />
         <Route path="workout" element={<Workout />} />
         <Route path="daily" element={<Daily />} />
         <Route path="library" element={<FoodLibrary />} />
