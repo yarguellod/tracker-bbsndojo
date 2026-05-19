@@ -14,7 +14,7 @@ export default function Login() {
     <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center px-6">
       <div className="mb-10 text-center">
         <div className="text-6xl mb-4">💪</div>
-        <h1 className="text-3xl font-bold text-white tracking-tight">FitTracker</h1>
+        <h1 className="text-3xl font-bold text-white tracking-tight">Veganitos Supreme</h1>
         <p className="text-zinc-400 mt-2 text-sm">Your daily health companion</p>
       </div>
 

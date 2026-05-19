@@ -4,14 +4,27 @@ import { db } from '../firebase'
 import { useAuth } from '../contexts/AuthContext'
 
 function FoodForm({ onSave, onCancel, initial = {} }) {
-  const [form, setForm] = useState({ name: '', cal: '', protein: '', carbs: '', fat: '', fiber: '', ...initial })
+  const [form, setForm] = useState({ name: '', serving: '', cal: '', protein: '', carbs: '', fat: '', fiber: '', ...initial })
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
+
+  const serving = Number(form.serving)
+  const norm = (v) => serving > 0 ? Math.round((Number(v || 0) / serving) * 100 * 10) / 10 : 0
 
   return (
     <div className="bg-zinc-800 rounded-2xl p-4 space-y-3">
       <input placeholder="Food name *" value={form.name} onChange={set('name')}
         className="w-full bg-zinc-700 text-white rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-green-500" autoFocus />
-      <p className="text-zinc-500 text-xs">Values per 100g</p>
+
+      <div className="flex items-center gap-2">
+        <label className="text-zinc-400 text-xs whitespace-nowrap">Values per</label>
+        <input type="number" inputMode="decimal" placeholder="e.g. 170" value={form.serving} onChange={set('serving')}
+          className="w-24 bg-zinc-700 text-white rounded-lg px-2 py-1.5 text-sm text-center outline-none focus:ring-1 focus:ring-green-500" />
+        <span className="text-zinc-400 text-xs">grams *</span>
+        {serving > 0 && serving !== 100 && form.cal && (
+          <span className="text-zinc-500 text-xs ml-auto">→ {norm(form.cal)} kcal / 100g</span>
+        )}
+      </div>
+
       <div className="grid grid-cols-2 gap-2">
         {[['cal', 'Calories *'], ['protein', 'Protein (g)'], ['carbs', 'Carbs (g)'], ['fat', 'Fat (g)'], ['fiber', 'Fiber (g)']].map(([k, l]) => (
           <div key={k}>
@@ -24,8 +37,8 @@ function FoodForm({ onSave, onCancel, initial = {} }) {
       <div className="flex gap-2">
         <button onClick={onCancel} className="flex-1 bg-zinc-700 text-white py-2.5 rounded-xl text-sm font-semibold">Cancel</button>
         <button
-          onClick={() => onSave({ name: form.name.trim(), cal: Number(form.cal), protein: Number(form.protein || 0), carbs: Number(form.carbs || 0), fat: Number(form.fat || 0), fiber: Number(form.fiber || 0) })}
-          disabled={!form.name || !form.cal}
+          onClick={() => onSave({ name: form.name.trim(), cal: norm(form.cal), protein: norm(form.protein), carbs: norm(form.carbs), fat: norm(form.fat), fiber: norm(form.fiber) })}
+          disabled={!form.name || !form.cal || !(serving > 0)}
           className="flex-1 bg-green-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-black font-bold py-2.5 rounded-xl text-sm">
           Save
         </button>
