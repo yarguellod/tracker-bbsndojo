@@ -18,17 +18,60 @@ const getInitials = (name) => {
 }
 const FREQUENCIES = ['Daily', 'Morning', 'Evening', 'Pre-workout', 'Post-workout', 'With meals']
 
+const COLORS = [
+  { name: 'red',     bg: 'bg-red-500',     text: 'text-red-200',     shadow: 'shadow-red-500/30',     dot: 'bg-red-500' },
+  { name: 'orange',  bg: 'bg-orange-500',  text: 'text-orange-200',  shadow: 'shadow-orange-500/30',  dot: 'bg-orange-500' },
+  { name: 'amber',   bg: 'bg-amber-500',   text: 'text-amber-100',   shadow: 'shadow-amber-500/30',   dot: 'bg-amber-500' },
+  { name: 'emerald', bg: 'bg-emerald-500', text: 'text-emerald-200', shadow: 'shadow-emerald-500/30', dot: 'bg-emerald-500' },
+  { name: 'teal',    bg: 'bg-teal-500',    text: 'text-teal-200',    shadow: 'shadow-teal-500/30',    dot: 'bg-teal-500' },
+  { name: 'blue',    bg: 'bg-blue-500',    text: 'text-blue-200',    shadow: 'shadow-blue-500/30',    dot: 'bg-blue-500' },
+  { name: 'purple',  bg: 'bg-purple-500',  text: 'text-purple-200',  shadow: 'shadow-purple-500/30',  dot: 'bg-purple-500' },
+  { name: 'pink',    bg: 'bg-pink-500',    text: 'text-pink-200',    shadow: 'shadow-pink-500/30',    dot: 'bg-pink-500' },
+]
+
+const SUGGESTED_COLORS = {
+  finasteride: 'blue',
+  'vitamin d': 'amber',
+  'vit d': 'amber',
+  'omega 3': 'teal',
+  'omega-3': 'teal',
+  fish: 'teal',
+  creatine: 'red',
+  b12: 'pink',
+  zinc: 'emerald',
+  magnesium: 'purple',
+  iron: 'orange',
+}
+
+const suggestColor = (name) => {
+  const n = name.toLowerCase().trim()
+  if (!n) return COLORS[Math.floor(Math.random() * COLORS.length)].name
+  for (const [key, color] of Object.entries(SUGGESTED_COLORS)) {
+    if (n.includes(key)) return color
+  }
+  return COLORS[Math.floor(Math.random() * COLORS.length)].name
+}
+
+const colorOf = (name) => COLORS.find(c => c.name === name) || COLORS.find(c => c.name === 'purple')
+
 function SuppPills({ supplements, setSupplements, done, onToggle, userId }) {
   const [showAdd, setShowAdd] = useState(false)
-  const [form, setForm] = useState({ name: '', frequency: 'Daily' })
+  const [form, setForm] = useState({ name: '', frequency: 'Daily', color: 'purple', colorTouched: false })
+
+  const onNameChange = (val) => {
+    setForm(f => ({
+      ...f,
+      name: val,
+      color: f.colorTouched ? f.color : suggestColor(val),
+    }))
+  }
 
   const addSupp = async () => {
     if (!form.name.trim()) return
-    const ref = await addDoc(collection(db, 'users', userId, 'supplements'), {
-      name: form.name.trim(), frequency: form.frequency,
-    })
-    setSupplements(s => [...s, { id: ref.id, name: form.name.trim(), frequency: form.frequency }])
-    setForm({ name: '', frequency: 'Daily' })
+    const data = { name: form.name.trim(), frequency: form.frequency, color: form.color }
+    const ref = await addDoc(collection(db, 'users', userId, 'supplements'), data)
+    setSupplements(s => [...s, { id: ref.id, ...data }])
+    setForm({ name: '', frequency: 'Daily', color: 'purple', colorTouched: false })
     setShowAdd(false)
   }
 
@@ -37,21 +80,24 @@ function SuppPills({ supplements, setSupplements, done, onToggle, userId }) {
     setSupplements(s => s.filter(x => x.id !== id))
   }
 
+  const previewColor = colorOf(form.color)
+
   return (
     <div className="border-b border-zinc-900">
       <div className="flex gap-2 overflow-x-auto px-4 py-3 items-start" style={{ scrollbarWidth: 'none' }}>
         {supplements.map(s => {
           const taken = done.includes(s.id)
+          const c = colorOf(s.color)
           return (
             <div key={s.id} className="flex-shrink-0 flex flex-col items-center gap-1">
               <button
                 onClick={() => onToggle(s.id)}
                 className={`flex flex-col items-center px-4 py-2 rounded-full font-bold transition-all active:scale-95 ${
-                  taken ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/25' : 'bg-zinc-800 text-zinc-400'
+                  taken ? `${c.bg} text-white shadow-lg ${c.shadow}` : 'bg-zinc-800 text-zinc-400'
                 }`}
               >
                 <span className="text-sm font-extrabold tracking-wide">{getInitials(s.name)}</span>
-                <span className={`text-xs font-normal leading-tight ${taken ? 'text-purple-200' : 'text-zinc-600'}`}>
+                <span className={`text-xs font-normal leading-tight ${taken ? c.text : 'text-zinc-600'}`}>
                   {s.frequency}
                 </span>
               </button>
@@ -68,21 +114,32 @@ function SuppPills({ supplements, setSupplements, done, onToggle, userId }) {
       {showAdd && (
         <div className="px-4 pb-4 space-y-2">
           <input autoFocus placeholder="Supplement name (e.g. Creatine, B12…)"
-            value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+            value={form.name} onChange={e => onNameChange(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && addSupp()}
-            className="w-full bg-zinc-800 text-white rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-purple-500" />
+            className="w-full bg-zinc-800 text-white rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-green-500" />
           <div className="flex gap-1.5 flex-wrap">
             {FREQUENCIES.map(f => (
               <button key={f} onClick={() => setForm(x => ({ ...x, frequency: f }))}
-                className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${form.frequency === f ? 'bg-purple-500 text-white' : 'bg-zinc-800 text-zinc-400'}`}>
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${form.frequency === f ? `${previewColor.bg} text-white` : 'bg-zinc-800 text-zinc-400'}`}>
                 {f}
               </button>
             ))}
           </div>
+          <div className="flex items-center gap-2">
+            <span className="text-zinc-500 text-xs">Color</span>
+            <div className="flex gap-1.5 flex-wrap">
+              {COLORS.map(c => (
+                <button key={c.name} onClick={() => setForm(x => ({ ...x, color: c.name, colorTouched: true }))}
+                  className={`w-7 h-7 rounded-full ${c.dot} transition-all ${form.color === c.name ? 'ring-2 ring-white ring-offset-2 ring-offset-zinc-900' : 'opacity-70'}`}
+                  aria-label={c.name}
+                />
+              ))}
+            </div>
+          </div>
           <div className="flex gap-2">
             <button onClick={() => setShowAdd(false)} className="flex-1 bg-zinc-800 text-white py-2 rounded-xl text-sm">Cancel</button>
             <button onClick={addSupp} disabled={!form.name.trim()}
-              className="flex-1 bg-purple-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white font-bold py-2 rounded-xl text-sm">
+              className={`flex-1 ${previewColor.bg} disabled:bg-zinc-700 disabled:text-zinc-500 text-white font-bold py-2 rounded-xl text-sm`}>
               Add Supplement
             </button>
           </div>
@@ -118,7 +175,7 @@ function AddFoodModal({ user, onAdd, onClose }) {
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState(null)
   const [grams, setGrams] = useState('100')
-  const [custom, setCustom] = useState({ name: '', cal: '', protein: '', carbs: '', fat: '' })
+  const [custom, setCustom] = useState({ name: '', serving: '100', cal: '', protein: '', carbs: '', fat: '' })
   const [time, setTime] = useState(() => new Date().toTimeString().slice(0, 5))
 
   useEffect(() => {
@@ -134,10 +191,21 @@ function AddFoodModal({ user, onAdd, onClose }) {
     onAdd({ id: crypto.randomUUID(), time, foodName: selected.name, foodId: selected.id, grams: Number(grams), ...macros })
   }
 
-  const addCustom = () => {
+  const addCustom = async () => {
     if (!custom.name || !custom.cal) return
-    onAdd({ id: crypto.randomUUID(), time, foodName: custom.name, isCustom: true,
-      cal: Number(custom.cal), protein: Number(custom.protein || 0), carbs: Number(custom.carbs || 0), fat: Number(custom.fat || 0) })
+    const serving = Number(custom.serving) || 100
+    const cal = Number(custom.cal), protein = Number(custom.protein || 0), carbs = Number(custom.carbs || 0), fat = Number(custom.fat || 0)
+
+    const per100 = (v) => Math.round((v / serving) * 100 * 10) / 10
+    try {
+      await addDoc(collection(db, 'users', user.uid, 'foods'), {
+        name: custom.name.trim(),
+        cal: per100(cal), protein: per100(protein), carbs: per100(carbs), fat: per100(fat), fiber: 0,
+      })
+    } catch (e) { /* still log the entry even if library save fails */ }
+
+    onAdd({ id: crypto.randomUUID(), time, foodName: custom.name.trim(), isCustom: true,
+      grams: serving, cal, protein, carbs, fat })
   }
 
   const loadGroup = (group) => {
@@ -222,6 +290,13 @@ function AddFoodModal({ user, onAdd, onClose }) {
               <input type="text" placeholder="Food name" value={custom.name} autoFocus
                 onChange={e => setCustom(c => ({ ...c, name: e.target.value }))}
                 className="w-full bg-zinc-800 text-white rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-green-500" />
+              <div className="flex items-center gap-2">
+                <label className="text-zinc-400 text-xs">For</label>
+                <input type="number" inputMode="decimal" value={custom.serving}
+                  onChange={e => setCustom(c => ({ ...c, serving: e.target.value }))}
+                  className="w-20 bg-zinc-800 text-white rounded-lg px-2 py-1.5 text-sm text-center outline-none focus:ring-1 focus:ring-green-500" />
+                <span className="text-zinc-400 text-xs">grams</span>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 {[['cal', 'Calories *'], ['protein', 'Protein (g)'], ['carbs', 'Carbs (g)'], ['fat', 'Fat (g)']].map(([k, l]) => (
                   <div key={k}>
@@ -232,6 +307,7 @@ function AddFoodModal({ user, onAdd, onClose }) {
                   </div>
                 ))}
               </div>
+              <p className="text-zinc-600 text-xs">Also saved to your Library (normalized to per-100g)</p>
               <button onClick={addCustom} disabled={!custom.name || !custom.cal}
                 className="w-full bg-green-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-black font-bold py-3 rounded-xl text-sm">
                 Add to Log

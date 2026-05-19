@@ -153,6 +153,13 @@ export default function FoodLibrary() {
 
   const filtered = foods.filter(f => f.name.toLowerCase().includes(search.toLowerCase()))
 
+  const nameCount = foods.reduce((acc, f) => {
+    const k = f.name.toLowerCase().trim()
+    acc[k] = (acc[k] || 0) + 1
+    return acc
+  }, {})
+  const duplicateCount = Object.values(nameCount).filter(n => n > 1).length
+
   return (
     <div className="min-h-full bg-zinc-950 pb-6">
       <div className="sticky top-0 z-10 bg-zinc-950 px-4 pt-4 pb-2 border-b border-zinc-900">
@@ -179,22 +186,37 @@ export default function FoodLibrary() {
 
             {showAddFood && <FoodForm onSave={saveFood} onCancel={() => setShowAddFood(false)} />}
 
+            {duplicateCount > 0 && (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2 flex items-center gap-2">
+                <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-amber-400 flex-shrink-0"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
+                <p className="text-amber-200 text-xs">
+                  {duplicateCount} food name{duplicateCount !== 1 ? 's have' : ' has'} duplicates — review and delete extras below
+                </p>
+              </div>
+            )}
+
             {filtered.length === 0 && !showAddFood && (
               <p className="text-zinc-600 text-sm text-center py-12">No foods yet — tap + Add to build your library</p>
             )}
 
             <div className="space-y-2">
-              {filtered.map(f => (
-                <div key={f.id} className="bg-zinc-900 rounded-xl px-4 py-3 flex items-center gap-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white text-sm font-medium">{f.name}</p>
-                    <p className="text-zinc-500 text-xs">{f.cal} kcal · P {f.protein}g · C {f.carbs}g · F {f.fat}g <span className="text-zinc-600">per 100g</span></p>
+              {filtered.map(f => {
+                const isDup = nameCount[f.name.toLowerCase().trim()] > 1
+                return (
+                  <div key={f.id} className={`rounded-xl px-4 py-3 flex items-center gap-3 ${isDup ? 'bg-amber-500/10 ring-1 ring-amber-500/30' : 'bg-zinc-900'}`}>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-white text-sm font-medium truncate">{f.name}</p>
+                        {isDup && <span className="text-amber-400 text-[10px] font-bold uppercase tracking-wider flex-shrink-0">Dup</span>}
+                      </div>
+                      <p className="text-zinc-500 text-xs">{f.cal} kcal · P {f.protein}g · C {f.carbs}g · F {f.fat}g <span className="text-zinc-600">per 100g</span></p>
+                    </div>
+                    <button onClick={() => deleteFood(f.id)} className="text-zinc-700 active:text-red-400 p-1">
+                      <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                    </button>
                   </div>
-                  <button onClick={() => deleteFood(f.id)} className="text-zinc-700 active:text-red-400 p-1">
-                    <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
-                  </button>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </>
         )}
