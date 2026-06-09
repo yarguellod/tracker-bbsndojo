@@ -3,8 +3,7 @@ import { doc, onSnapshot, setDoc, collection, getDocs, addDoc, deleteDoc } from 
 import { db } from '../firebase'
 import { useAuth } from '../contexts/AuthContext'
 
-const toKey = (d) => d.toISOString().slice(0, 10)
-const fmt = (d) => d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+import { toKey, fmt } from '../lib/date'
 
 function SetRow({ set, onChange, onRemove }) {
   return (

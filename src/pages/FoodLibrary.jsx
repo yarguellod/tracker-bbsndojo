@@ -3,12 +3,14 @@ import { collection, getDocs, addDoc, deleteDoc, doc, setDoc } from 'firebase/fi
 import { db } from '../firebase'
 import { useAuth } from '../contexts/AuthContext'
 
+import { toPer100g } from '../lib/macros'
+
 function FoodForm({ onSave, onCancel, initial = {} }) {
   const [form, setForm] = useState({ name: '', serving: '', cal: '', protein: '', carbs: '', fat: '', fiber: '', ...initial })
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
   const serving = Number(form.serving)
-  const norm = (v) => serving > 0 ? Math.round((Number(v || 0) / serving) * 100 * 10) / 10 : 0
+  const norm = (v) => toPer100g(serving, v)
 
   return (
     <div className="bg-zinc-800 rounded-2xl p-4 space-y-3">
@@ -37,7 +39,15 @@ function FoodForm({ onSave, onCancel, initial = {} }) {
       <div className="flex gap-2">
         <button onClick={onCancel} className="flex-1 bg-zinc-700 text-white py-2.5 rounded-xl text-sm font-semibold">Cancel</button>
         <button
-          onClick={() => onSave({ name: form.name.trim(), cal: norm(form.cal), protein: norm(form.protein), carbs: norm(form.carbs), fat: norm(form.fat), fiber: norm(form.fiber) })}
+          onClick={() => onSave({
+            name: form.name.trim(),
+            cal: norm(form.cal),
+            protein: norm(form.protein),
+            carbs: norm(form.carbs),
+            fat: norm(form.fat),
+            fiber: norm(form.fiber),
+            defaultServing: serving,
+          })}
           disabled={!form.name || !form.cal || !(serving > 0)}
           className="flex-1 bg-green-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-black font-bold py-2.5 rounded-xl text-sm">
           Save
@@ -209,7 +219,17 @@ export default function FoodLibrary() {
                         <p className="text-white text-sm font-medium truncate">{f.name}</p>
                         {isDup && <span className="text-amber-400 text-[10px] font-bold uppercase tracking-wider flex-shrink-0">Dup</span>}
                       </div>
-                      <p className="text-zinc-500 text-xs">{f.cal} kcal · P {f.protein}g · C {f.carbs}g · F {f.fat}g <span className="text-zinc-600">per 100g</span></p>
+                      {f.defaultServing > 0 && f.defaultServing !== 100 ? (
+                        <p className="text-zinc-500 text-xs">
+                          {Math.round(f.cal * f.defaultServing / 100)} kcal ·
+                          {' '}P {Math.round(f.protein * f.defaultServing / 10) / 10}g ·
+                          {' '}C {Math.round(f.carbs * f.defaultServing / 10) / 10}g ·
+                          {' '}F {Math.round(f.fat * f.defaultServing / 10) / 10}g
+                          {' '}<span className="text-zinc-600">per {f.defaultServing}g</span>
+                        </p>
+                      ) : (
+                        <p className="text-zinc-500 text-xs">{f.cal} kcal · P {f.protein}g · C {f.carbs}g · F {f.fat}g <span className="text-zinc-600">per 100g</span></p>
+                      )}
                     </div>
                     <button onClick={() => deleteFood(f.id)} className="text-zinc-700 active:text-red-400 p-1">
                       <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>

@@ -3,7 +3,7 @@ import { collection, getDocs } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuth } from '../contexts/AuthContext'
 
-const toKey = (d) => d.toISOString().slice(0, 10)
+import { toKey } from '../lib/date'
 
 const PERIODS = [
   { label: '3 days', days: 3 },

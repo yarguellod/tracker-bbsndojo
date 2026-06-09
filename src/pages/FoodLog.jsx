@@ -2,15 +2,8 @@ import { useState, useEffect } from 'react'
 import { doc, onSnapshot, setDoc, collection, getDocs, addDoc, deleteDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuth } from '../contexts/AuthContext'
-
-const toKey = (d) => d.toISOString().slice(0, 10)
-const fmt = (d) => d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-const calc = (food, grams) => ({
-  cal: Math.round((grams / 100) * food.cal),
-  protein: Math.round((grams / 100) * food.protein * 10) / 10,
-  carbs: Math.round((grams / 100) * food.carbs * 10) / 10,
-  fat: Math.round((grams / 100) * food.fat * 10) / 10,
-})
+import { toKey, fmt } from '../lib/date'
+import { calc, toPer100g } from '../lib/macros'
 const getInitials = (name) => {
   const words = name.trim().split(/\s+/)
   if (words.length === 1) return name.slice(0, 3).toUpperCase()
@@ -176,6 +169,7 @@ function AddFoodModal({ user, onAdd, onClose }) {
   const [selected, setSelected] = useState(null)
   const [grams, setGrams] = useState('100')
   const [custom, setCustom] = useState({ name: '', serving: '100', cal: '', protein: '', carbs: '', fat: '' })
+  const [saveToLib, setSaveToLib] = useState(true)
   const [time, setTime] = useState(() => new Date().toTimeString().slice(0, 5))
 
   useEffect(() => {
@@ -195,17 +189,35 @@ function AddFoodModal({ user, onAdd, onClose }) {
     if (!custom.name || !custom.cal) return
     const serving = Number(custom.serving) || 100
     const cal = Number(custom.cal), protein = Number(custom.protein || 0), carbs = Number(custom.carbs || 0), fat = Number(custom.fat || 0)
-
     const per100 = (v) => Math.round((v / serving) * 100 * 10) / 10
-    try {
-      await addDoc(collection(db, 'users', user.uid, 'foods'), {
-        name: custom.name.trim(),
-        cal: per100(cal), protein: per100(protein), carbs: per100(carbs), fat: per100(fat), fiber: 0,
-      })
-    } catch (e) { /* still log the entry even if library save fails */ }
+    const trimmed = custom.name.trim()
 
-    onAdd({ id: crypto.randomUUID(), time, foodName: custom.name.trim(), isCustom: true,
-      grams: serving, cal, protein, carbs, fat })
+    let foodId = null
+    if (saveToLib) {
+      const lowered = trimmed.toLowerCase()
+      const existing = foods.find(f => f.name.toLowerCase().trim() === lowered)
+      const data = {
+        name: trimmed,
+        cal: per100(cal), protein: per100(protein), carbs: per100(carbs), fat: per100(fat),
+        fiber: existing?.fiber ?? 0,
+        defaultServing: serving,
+      }
+      try {
+        if (existing) {
+          await setDoc(doc(db, 'users', user.uid, 'foods', existing.id), data, { merge: true })
+          foodId = existing.id
+        } else {
+          const ref = await addDoc(collection(db, 'users', user.uid, 'foods'), data)
+          foodId = ref.id
+        }
+      } catch (e) { /* still log the entry even if library save fails */ }
+    }
+
+    onAdd({
+      id: crypto.randomUUID(), time, foodName: trimmed,
+      ...(foodId ? { foodId } : { isCustom: true }),
+      grams: serving, cal, protein, carbs, fat,
+    })
   }
 
   const loadGroup = (group) => {
@@ -218,6 +230,12 @@ function AddFoodModal({ user, onAdd, onClose }) {
   }
 
   const preview = selected && grams ? calc(selected, Number(grams)) : null
+  const newPreview = custom.cal ? {
+    cal: Math.round(Number(custom.cal)),
+    protein: Math.round(Number(custom.protein || 0) * 10) / 10,
+    carbs: Math.round(Number(custom.carbs || 0) * 10) / 10,
+    fat: Math.round(Number(custom.fat || 0) * 10) / 10,
+  } : null
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/50" onClick={onClose}>
@@ -229,7 +247,7 @@ function AddFoodModal({ user, onAdd, onClose }) {
             className="bg-zinc-800 text-white rounded-lg px-3 py-1.5 text-sm outline-none flex-1" />
         </div>
         <div className="flex gap-1 bg-zinc-800 rounded-xl p-1 mb-4">
-          {[['library', 'Library'], ['custom', 'Custom'], ['groups', 'Meal Groups']].map(([t, label]) => (
+          {[['library', 'Library'], ['new', 'New food'], ['groups', 'Meal Groups']].map(([t, label]) => (
             <button key={t} onClick={() => setTab(t)}
               className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${tab === t ? 'bg-zinc-700 text-white' : 'text-zinc-500'}`}>
               {label}
@@ -253,7 +271,21 @@ function AddFoodModal({ user, onAdd, onClose }) {
                   <div>
                     <label className="text-zinc-400 text-xs block mb-1">Grams</label>
                     <input type="number" inputMode="decimal" value={grams} onChange={e => setGrams(e.target.value)} autoFocus
-                      className="w-full bg-zinc-700 text-white rounded-lg px-3 py-2.5 text-sm outline-none" />
+                      className="w-full bg-zinc-700 text-white rounded-xl px-3 py-3 text-2xl font-bold text-center outline-none focus:ring-1 focus:ring-green-500" />
+                    <div className="flex gap-1.5 mt-2">
+                      {[-10, -5, +5, +10].map(d => (
+                        <button key={d} onClick={() => setGrams(g => String(Math.max(0, (Number(g) || 0) + d)))}
+                          className="flex-1 bg-zinc-700 text-white rounded-lg py-1.5 text-xs font-semibold active:bg-zinc-600">
+                          {d > 0 ? '+' : ''}{d}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-1.5 mt-1.5">
+                      {[50, 100, 150, 200].map(v => (
+                        <button key={v} onClick={() => setGrams(String(v))}
+                          className="flex-1 bg-zinc-800 text-zinc-300 rounded-lg py-1.5 text-xs active:bg-zinc-700">{v}g</button>
+                      ))}
+                    </div>
                   </div>
                   {preview && (
                     <div className="grid grid-cols-4 gap-2 text-center">
@@ -274,7 +306,7 @@ function AddFoodModal({ user, onAdd, onClose }) {
                 <div className="space-y-1">
                   {filtered.length === 0 && <p className="text-zinc-600 text-sm text-center py-8">No foods found — add them in Library</p>}
                   {filtered.map(f => (
-                    <button key={f.id} onClick={() => { setSelected(f); setGrams('100') }}
+                    <button key={f.id} onClick={() => { setSelected(f); setGrams(String(f.defaultServing > 0 ? f.defaultServing : 100)) }}
                       className="w-full flex justify-between items-center bg-zinc-800 rounded-xl px-3 py-3 active:bg-zinc-700">
                       <span className="text-white text-sm">{f.name}</span>
                       <span className="text-zinc-500 text-xs">{f.cal} kcal · {f.protein}g P</span>
@@ -285,11 +317,17 @@ function AddFoodModal({ user, onAdd, onClose }) {
             </>
           )}
 
-          {tab === 'custom' && (
+          {tab === 'new' && (() => {
+            const lowered = custom.name.trim().toLowerCase()
+            const existing = lowered ? foods.find(f => f.name.toLowerCase().trim() === lowered) : null
+            return (
             <>
               <input type="text" placeholder="Food name" value={custom.name} autoFocus
                 onChange={e => setCustom(c => ({ ...c, name: e.target.value }))}
                 className="w-full bg-zinc-800 text-white rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-green-500" />
+              {existing && saveToLib && (
+                <p className="text-amber-400 text-xs">“{existing.name}” already in Library — saving will update its macros.</p>
+              )}
               <div className="flex items-center gap-2">
                 <label className="text-zinc-400 text-xs">For</label>
                 <input type="number" inputMode="decimal" value={custom.serving}
@@ -307,13 +345,28 @@ function AddFoodModal({ user, onAdd, onClose }) {
                   </div>
                 ))}
               </div>
-              <p className="text-zinc-600 text-xs">Also saved to your Library (normalized to per-100g)</p>
+              {newPreview && (
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  {[['Cal', newPreview.cal, 'text-green-400'], ['P', newPreview.protein + 'g', 'text-blue-400'], ['C', newPreview.carbs + 'g', 'text-amber-400'], ['F', newPreview.fat + 'g', 'text-orange-400']].map(([l, v, c]) => (
+                    <div key={l} className="bg-zinc-800 rounded-lg p-2">
+                      <p className={`text-sm font-bold ${c}`}>{v}</p>
+                      <p className="text-zinc-500 text-xs">{l}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" checked={saveToLib} onChange={e => setSaveToLib(e.target.checked)}
+                  className="w-4 h-4 accent-green-500" />
+                <span className="text-zinc-300 text-xs">Save to Library for next time (normalized to per-100g)</span>
+              </label>
               <button onClick={addCustom} disabled={!custom.name || !custom.cal}
                 className="w-full bg-green-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-black font-bold py-3 rounded-xl text-sm">
-                Add to Log
+                {saveToLib ? (existing ? 'Update Library & Log' : 'Save to Library & Log') : 'Log without saving'}
               </button>
             </>
-          )}
+            )
+          })()}
 
           {tab === 'groups' && (
             <div className="space-y-2">
