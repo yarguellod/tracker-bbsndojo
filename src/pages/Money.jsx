@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react'
 import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, orderBy, getDoc, setDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuth } from '../contexts/AuthContext'
+import { toKey } from '../lib/date'
 
-const todayKey = () => new Date().toISOString().slice(0, 10)
+const todayKey = () => toKey(new Date())
 const monthOf = (d) => d.slice(0, 7)
 const fmtMoney = (n) => `$${(Math.round(n * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: n % 1 === 0 ? 0 : 2 })}`
 const fmtDate = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })

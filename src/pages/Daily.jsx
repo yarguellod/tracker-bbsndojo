@@ -5,13 +5,49 @@ import { useAuth } from '../contexts/AuthContext'
 
 import { toKey, fmt } from '../lib/date'
 
+const FREQUENCIES = ['Daily', 'Morning', 'Evening', 'Pre-workout', 'Post-workout', 'With meals']
+
+const COLORS = [
+  { name: 'red',     bg: 'bg-red-500',     text: 'text-red-200',     shadow: 'shadow-red-500/30',     dot: 'bg-red-500' },
+  { name: 'orange',  bg: 'bg-orange-500',  text: 'text-orange-200',  shadow: 'shadow-orange-500/30',  dot: 'bg-orange-500' },
+  { name: 'amber',   bg: 'bg-amber-500',   text: 'text-amber-100',   shadow: 'shadow-amber-500/30',   dot: 'bg-amber-500' },
+  { name: 'emerald', bg: 'bg-emerald-500', text: 'text-emerald-200', shadow: 'shadow-emerald-500/30', dot: 'bg-emerald-500' },
+  { name: 'teal',    bg: 'bg-teal-500',    text: 'text-teal-200',    shadow: 'shadow-teal-500/30',    dot: 'bg-teal-500' },
+  { name: 'blue',    bg: 'bg-blue-500',    text: 'text-blue-200',    shadow: 'shadow-blue-500/30',    dot: 'bg-blue-500' },
+  { name: 'purple',  bg: 'bg-purple-500',  text: 'text-purple-200',  shadow: 'shadow-purple-500/30',  dot: 'bg-purple-500' },
+  { name: 'pink',    bg: 'bg-pink-500',    text: 'text-pink-200',    shadow: 'shadow-pink-500/30',    dot: 'bg-pink-500' },
+]
+
+const SUGGESTED_COLORS = {
+  finasteride: 'blue', 'vitamin d': 'amber', 'vit d': 'amber',
+  'omega 3': 'teal', 'omega-3': 'teal', fish: 'teal',
+  creatine: 'red', b12: 'pink', zinc: 'emerald', magnesium: 'purple', iron: 'orange',
+}
+
+const suggestColor = (name) => {
+  const n = name.toLowerCase().trim()
+  if (!n) return COLORS[Math.floor(Math.random() * COLORS.length)].name
+  for (const [key, color] of Object.entries(SUGGESTED_COLORS)) {
+    if (n.includes(key)) return color
+  }
+  return COLORS[Math.floor(Math.random() * COLORS.length)].name
+}
+
+const colorOf = (name) => COLORS.find(c => c.name === name) || COLORS.find(c => c.name === 'purple')
+
+const getInitials = (name) => {
+  const words = name.trim().split(/\s+/)
+  if (words.length === 1) return name.slice(0, 3).toUpperCase()
+  return words.map(w => w[0]).join('').toUpperCase().slice(0, 3)
+}
+
 export default function Daily() {
   const { user } = useAuth()
   const [date, setDate] = useState(new Date())
   const [metrics, setMetrics] = useState({ steps: '', miles: '', weightAM: '', weightPM: '', supplementsDone: [] })
   const [supplements, setSupplements] = useState([])
-  const [newSupp, setNewSupp] = useState('')
   const [showAddSupp, setShowAddSupp] = useState(false)
+  const [suppForm, setSuppForm] = useState({ name: '', frequency: 'Daily', color: 'purple', colorTouched: false })
 
   useEffect(() => {
     if (!user) return
@@ -60,10 +96,11 @@ export default function Daily() {
   }
 
   const addSupp = async () => {
-    if (!newSupp.trim()) return
-    const ref = await addDoc(collection(db, 'users', user.uid, 'supplements'), { name: newSupp.trim() })
-    setSupplements(s => [...s, { id: ref.id, name: newSupp.trim() }])
-    setNewSupp('')
+    if (!suppForm.name.trim()) return
+    const data = { name: suppForm.name.trim(), frequency: suppForm.frequency, color: suppForm.color }
+    const ref = await addDoc(collection(db, 'users', user.uid, 'supplements'), data)
+    setSupplements(s => [...s, { id: ref.id, ...data }])
+    setSuppForm({ name: '', frequency: 'Daily', color: 'purple', colorTouched: false })
     setShowAddSupp(false)
   }
 
@@ -145,41 +182,61 @@ export default function Daily() {
             <button onClick={() => setShowAddSupp(v => !v)} className="text-green-400 text-xs font-medium">+ Add</button>
           </div>
 
-          {showAddSupp && (
-            <div className="flex gap-2 mb-3">
-              <input
-                type="text"
-                placeholder="e.g. B12, Creatine…"
-                value={newSupp}
-                onChange={e => setNewSupp(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && addSupp()}
-                className="flex-1 bg-zinc-800 text-white rounded-xl px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-green-500"
-                autoFocus
-              />
-              <button onClick={addSupp} className="bg-green-500 text-black font-bold px-4 rounded-xl text-sm">Save</button>
-            </div>
-          )}
+          {showAddSupp && (() => {
+            const previewColor = colorOf(suppForm.color)
+            return (
+              <div className="mb-3 space-y-2">
+                <input autoFocus placeholder="Supplement name (e.g. Creatine, B12…)"
+                  value={suppForm.name}
+                  onChange={e => setSuppForm(f => ({ ...f, name: e.target.value, color: f.colorTouched ? f.color : suggestColor(e.target.value) }))}
+                  onKeyDown={e => e.key === 'Enter' && addSupp()}
+                  className="w-full bg-zinc-800 text-white rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-green-500" />
+                <div className="flex gap-1.5 flex-wrap">
+                  {FREQUENCIES.map(f => (
+                    <button key={f} onClick={() => setSuppForm(x => ({ ...x, frequency: f }))}
+                      className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${suppForm.frequency === f ? `${previewColor.bg} text-white` : 'bg-zinc-800 text-zinc-400'}`}>
+                      {f}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-zinc-500 text-xs">Color</span>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {COLORS.map(c => (
+                      <button key={c.name} onClick={() => setSuppForm(x => ({ ...x, color: c.name, colorTouched: true }))}
+                        className={`w-7 h-7 rounded-full ${c.dot} transition-all ${suppForm.color === c.name ? 'ring-2 ring-white ring-offset-2 ring-offset-zinc-900' : 'opacity-70'}`}
+                        aria-label={c.name} />
+                    ))}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowAddSupp(false)} className="flex-1 bg-zinc-800 text-white py-2 rounded-xl text-sm">Cancel</button>
+                  <button onClick={addSupp} disabled={!suppForm.name.trim()}
+                    className={`flex-1 ${previewColor.bg} disabled:bg-zinc-700 disabled:text-zinc-500 text-white font-bold py-2 rounded-xl text-sm`}>
+                    Add Supplement
+                  </button>
+                </div>
+              </div>
+            )
+          })()}
 
-          {supplements.length === 0 ? (
+          {supplements.length === 0 && !showAddSupp ? (
             <p className="text-zinc-600 text-sm text-center py-4">No supplements yet — tap + Add</p>
           ) : (
-            <div className="space-y-2">
+            <div className="flex gap-2 flex-wrap">
               {supplements.map(s => {
-                const done = metrics.supplementsDone.includes(s.id)
+                const taken = metrics.supplementsDone.includes(s.id)
+                const c = colorOf(s.color)
                 return (
-                  <div key={s.id} className="flex items-center gap-3">
-                    <button
-                      onClick={() => toggleSupp(s.id)}
-                      className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
-                        done ? 'bg-purple-500 border-purple-500' : 'border-zinc-600'
-                      }`}
-                    >
-                      {done && <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5 text-white"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>}
+                  <div key={s.id} className="flex flex-col items-center gap-1">
+                    <button onClick={() => toggleSupp(s.id)}
+                      className={`flex flex-col items-center px-4 py-2 rounded-full font-bold transition-all active:scale-95 ${
+                        taken ? `${c.bg} text-white shadow-lg ${c.shadow}` : 'bg-zinc-800 text-zinc-400'
+                      }`}>
+                      <span className="text-sm font-extrabold tracking-wide">{getInitials(s.name)}</span>
+                      <span className={`text-xs font-normal leading-tight ${taken ? c.text : 'text-zinc-600'}`}>{s.frequency || 'Daily'}</span>
                     </button>
-                    <span className={`flex-1 text-sm ${done ? 'text-zinc-500 line-through' : 'text-white'}`}>{s.name}</span>
-                    <button onClick={() => deleteSupp(s.id)} className="text-zinc-700 active:text-red-400 p-1">
-                      <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-                    </button>
+                    <button onClick={() => deleteSupp(s.id)} className="text-zinc-700 active:text-red-400 text-sm leading-none">×</button>
                   </div>
                 )
               })}

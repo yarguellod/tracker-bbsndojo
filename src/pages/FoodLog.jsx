@@ -164,6 +164,7 @@ function MiniDashboard({ totals }) {
 function AddFoodModal({ user, onAdd, onClose }) {
   const [tab, setTab] = useState('library')
   const [foods, setFoods] = useState([])
+  const [globalFoods, setGlobalFoods] = useState([])
   const [mealGroups, setMealGroups] = useState([])
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState(null)
@@ -175,9 +176,15 @@ function AddFoodModal({ user, onAdd, onClose }) {
   useEffect(() => {
     getDocs(collection(db, 'users', user.uid, 'foods')).then(s => setFoods(s.docs.map(d => ({ id: d.id, ...d.data() }))))
     getDocs(collection(db, 'users', user.uid, 'mealGroups')).then(s => setMealGroups(s.docs.map(d => ({ id: d.id, ...d.data() }))))
+    getDocs(collection(db, 'globalLibrary')).then(s => setGlobalFoods(s.docs.map(d => ({ id: d.id, _global: true, ...d.data() }))))
   }, [user])
 
-  const filtered = foods.filter(f => f.name.toLowerCase().includes(search.toLowerCase()))
+  const q = search.toLowerCase()
+  const userFiltered = foods.filter(f => f.name.toLowerCase().includes(q))
+  const globalFiltered = globalFoods.filter(g =>
+    g.name.toLowerCase().includes(q) && !foods.some(f => f.name.toLowerCase().trim() === g.name.toLowerCase().trim())
+  )
+  const filtered = [...userFiltered, ...globalFiltered]
 
   const addFromLibrary = () => {
     if (!selected || !grams) return
@@ -308,8 +315,11 @@ function AddFoodModal({ user, onAdd, onClose }) {
                   {filtered.map(f => (
                     <button key={f.id} onClick={() => { setSelected(f); setGrams(String(f.defaultServing > 0 ? f.defaultServing : 100)) }}
                       className="w-full flex justify-between items-center bg-zinc-800 rounded-xl px-3 py-3 active:bg-zinc-700">
-                      <span className="text-white text-sm">{f.name}</span>
-                      <span className="text-zinc-500 text-xs">{f.cal} kcal · {f.protein}g P</span>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-white text-sm truncate">{f.name}</span>
+                        {f._global && <span className="text-blue-400 text-[10px] font-bold uppercase tracking-wider flex-shrink-0">Global</span>}
+                      </div>
+                      <span className="text-zinc-500 text-xs flex-shrink-0 ml-2">{f.cal} kcal · {f.protein}g P</span>
                     </button>
                   ))}
                 </div>
@@ -396,6 +406,7 @@ export default function FoodLog() {
   const [supplements, setSupplements] = useState([])
   const [suppDone, setSuppDone] = useState([])
   const [showModal, setShowModal] = useState(false)
+  const [saveError, setSaveError] = useState(null)
 
   useEffect(() => {
     if (!user) return
@@ -420,7 +431,13 @@ export default function FoodLog() {
   }, [user, date])
 
   const saveEntries = async (updated) => {
-    await setDoc(doc(db, 'users', user.uid, 'logs', toKey(date)), { foodEntries: updated }, { merge: true })
+    try {
+      await setDoc(doc(db, 'users', user.uid, 'logs', toKey(date)), { foodEntries: updated }, { merge: true })
+      setSaveError(null)
+    } catch (e) {
+      setSaveError('Failed to save — check your connection')
+      setTimeout(() => setSaveError(null), 4000)
+    }
   }
 
   const toggleSupp = async (id) => {
@@ -437,6 +454,7 @@ export default function FoodLog() {
   }
 
   const removeEntry = (id) => {
+    if (!window.confirm('Remove this food entry?')) return
     const updated = entries.filter(e => e.id !== id)
     setEntries(updated)
     saveEntries(updated)
@@ -495,8 +513,14 @@ export default function FoodLog() {
         ))}
       </div>
 
+      {saveError && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-red-500/90 text-white text-xs font-semibold px-4 py-2 rounded-full shadow-lg">
+          {saveError}
+        </div>
+      )}
+
       <button onClick={() => setShowModal(true)}
-        className="fixed right-4 w-14 h-14 bg-green-500 rounded-full shadow-lg shadow-green-500/30 flex items-center justify-center active:scale-95 transition-transform z-40"
+        className="fixed right-4 w-14 h-14 bg-green-500 rounded-full shadow-lg shadow-green-500/30 flex items-center justify-center active:scale-95 transition-transform z-50"
         style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5.5rem)' }}>
         <svg viewBox="0 0 24 24" fill="currentColor" className="w-7 h-7 text-black"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
       </button>

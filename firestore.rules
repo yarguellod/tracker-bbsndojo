@@ -2,10 +2,18 @@ rules_version = '2';
 
 // All user data lives under /users/{uid}/...
 // Only the authenticated owner can read or write their own subtree.
+// Global food library is readable by all authenticated users, writable only by the admin.
 service cloud.firestore {
   match /databases/{database}/documents {
     match /users/{uid}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Global food library — read by any signed-in user, write by admin only.
+    match /globalLibrary/{foodId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
     // Deny everything else by default.

@@ -116,6 +116,7 @@ export default function Workout() {
   const [showAddEx, setShowAddEx] = useState(false)
   const [newCardio, setNewCardio] = useState({ type: '', duration: '' })
   const [showAddCardio, setShowAddCardio] = useState(false)
+  const [saveError, setSaveError] = useState(null)
 
   useEffect(() => {
     if (!user) return
@@ -127,7 +128,13 @@ export default function Workout() {
   }, [user, date])
 
   const save = async (updated) => {
-    await setDoc(doc(db, 'users', user.uid, 'logs', toKey(date)), { workout: updated }, { merge: true })
+    try {
+      await setDoc(doc(db, 'users', user.uid, 'logs', toKey(date)), { workout: updated }, { merge: true })
+      setSaveError(null)
+    } catch (e) {
+      setSaveError('Failed to save — check your connection')
+      setTimeout(() => setSaveError(null), 4000)
+    }
   }
 
   const startWorkout = (template) => {
@@ -281,13 +288,19 @@ export default function Workout() {
               </button>
             )}
 
-            <button onClick={() => { setWorkout(null); save(null) }}
+            <button onClick={() => { if (window.confirm('Delete this entire workout?')) { setWorkout(null); save(null) } }}
               className="w-full text-zinc-700 text-xs py-2 active:text-red-400">
               Delete workout
             </button>
           </>
         )}
       </div>
+
+      {saveError && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-red-500/90 text-white text-xs font-semibold px-4 py-2 rounded-full shadow-lg">
+          {saveError}
+        </div>
+      )}
 
       {showTemplates && <TemplateModal user={user} onSelect={startWorkout} onClose={() => setShowTemplates(false)} />}
     </div>
